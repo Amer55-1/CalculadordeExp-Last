@@ -7,144 +7,148 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ======================
-# Item multipliers
-# ======================
+# EXP items and multipliers
 items = {
-    "legendary iris": 5.0,
-    "platinum iris": 3.0,
-    "blessed iris": 2.0,
+    "lucky blessed iris": 2,
+    "blessed iris": 2,
+    "iris bless": 2,
+    "platinum blessed iris": 3,
+    "legendary iris": 5,
+    "experience potion 1-day": 1.3,
+    "experience potion 3-days": 1.3,
+    "experience potion 7-days": 1.3,
+    "experience elixir 1-hour": 1.3,
+    "experience elixir 3-hour": 1.3,
+    "experience elixir 7-hour": 1.3,
     "experience scroll": 1.5,
     "blessed bottle": 1.2,
+    "experience potion": 1.5,
+    "sacred jar": 1.3,
     "cake": 1.3,
-    "experience elixir": 1.3,
-    "snowman": 2.0,
-    "double exp event": 2.0
+    "large cake": 1.3,
+    "snowman": 2,
+    "big snowman": 2,
+    "chicken noodle soup": 1.2,
+    "watermelon": 1.5,
+    "water melon slice": 1.2,
+    "blue april fools' day candy": 1.5,
+    "stripes": 1.5,
+    "elizabeth's enhancement": 2,
+    "holy bless": 1.1,  # average between 1.05-1.2
+    "heroic ignition": 2.5,
+    "guardian's blessing": 1.75,  # average 1.5-2
+    "sun of happiness": 1.5,
+    "recommended sever exp": 1.5,
 }
 
-# ======================
-# EXP Boosters needed per Ascension level (Seeds)
-# ======================
-aufstieg_boosters = {1: 3985, 2: 7970, 3: 11955, 4: 19128, 5: 95639, 6: 159398}
+# Ascension seeds per level
+aufstieg_boosters = {
+    1: 3985,
+    2: 7970,
+    3: 11955,
+    4: 19128,
+    5: 95639,
+    6: 159398
+}
 
-# ======================
-# Calculate base combo (without dungeon)
-# ======================
-def calculate_combo_base(combo):
+# Calculate total EXP for a combo capped at 500%
+def calculate_combo(combo):
     total = 1.0
     for item in combo:
         total *= items.get(item.lower(), 1)
-    capped_total = min(total, 5.0)  # Cap at 500%
-    return capped_total
+    capped_total = min(total, 5)  # cap at 500%
+    return {
+        "base": total,
+        "capped": capped_total
+    }
 
-# ======================
-# Recommend items / boosters
-# ======================
-def recommend_combo(user_items):
-    current_total = calculate_combo_base(user_items)
-    
-    # Single item giving 500%
-    if len(user_items) == 1 and current_total >= 5.0:
-        return "Recommendation: Use EXP Booster + Random Booster"
-    
-    # Combo reaches 500%
-    if current_total >= 5.0:
-        return "Recommendation: Use Epic 500% EXP Spell"
-    
-    # Suggest additional items to reach 500% if possible
-    possible_additions = []
-    for name, multiplier in items.items():
-        if name.lower() in [i.lower() for i in user_items]:
-            continue
-        new_total = calculate_combo_base(user_items + [name])
-        if 5.0 <= new_total <= 6.0 or (current_total < 5.0 <= new_total):
-            possible_additions.append(name)
-    
-    if possible_additions:
-        return f"Recommendation: Add {' + '.join(possible_additions)} and use Epic 500% EXP Spell"
-    
-    # Default
-    return "Recommendation: Use EXP Booster + Random Booster"
+# Find combinations to reach 500% without exceeding 600%
+def suggest_combinations(user_items):
+    all_items = list(items.keys())
+    results = []
 
-# ======================
+    # Single item 500%
+    for ui in user_items:
+        if items.get(ui.lower(), 0) >= 5:
+            results.append({
+                "combo": [ui],
+                "capped": 5,
+                "recommendation": "Use EXP Booster + Random Booster"
+            })
+            return results
+
+    # If current combo < 500%, generate extra combos
+    current_total = 1
+    for ui in user_items:
+        current_total *= items.get(ui.lower(), 1)
+
+    # Generate additional combinations
+    potential_additions = [i for i in all_items if i.lower() not in [x.lower() for x in user_items]]
+    valid_combos = []
+
+    for r in range(0, 4):  # up to 3 extra items
+        for extra in itertools.combinations(potential_additions, r):
+            combo = user_items + list(extra)
+            total = 1
+            for i in combo:
+                total *= items.get(i.lower(), 1)
+            if total >= 5:  # reached 500%
+                valid_combos.append((combo, min(total,5)))
+
+    # Prepare results
+    for combo, capped in valid_combos[:10]:  # limit first 10
+        results.append({
+            "combo": combo,
+            "capped": capped,
+            "recommendation": "Use Epic 500% EXP Spell"
+        })
+
+    # If nothing reaches 500%, just show current
+    if not results:
+        results.append({
+            "combo": user_items,
+            "capped": min(current_total,5),
+            "recommendation": "Current combo gives {:.0%}, can add more items to reach 500%".format(min(current_total,5)/5)
+        })
+
+    return results
+
 # Combo command
-# ======================
 @bot.command()
 async def combo(ctx, *, args):
-    user_items = [x.strip().lower() for x in args.split("+") if x]
-    if not user_items:
-        await ctx.send("Please provide at least one item.")
-        return
-    
-    capped_total = calculate_combo_base(user_items)
-    recommendation = recommend_combo(user_items)
-
-    response = f"Combo: {', '.join(user_items)}\n"
-    response += f"Total without cap: {capped_total:.2f}x | Capped at 500-600%: {capped_total:.2f}x\n"
-    response += recommendation
-
+    user_items = [x.strip().lower() for x in args.split("+")]
+    combos = suggest_combinations(user_items)
+    response = ""
+    for c in combos:
+        response += f"Combo: {', '.join(c['combo'])}\n"
+        response += f"Total without cap: {calculate_combo(c['combo'])['base']:.2f}x | Capped at 500%: {c['capped']:.2f}x\n"
+        response += f"Recommendation: {c['recommendation']}\n\n"
     await ctx.send(response[:2000])
 
-# ======================
-# Dungeon command
-# ======================
-def calculate_combo_dungeon(combo, dungeon_percent=50.0):
-    base = calculate_combo_base(combo)
-    dungeon_multiplier = 1 + dungeon_percent / 100
-    return base * dungeon_multiplier
-
-@bot.command()
-async def dungeon(ctx, percent: float, *, args=""):
-    user_items = [x.strip().lower() for x in args.split("+") if x]
-    result = calculate_combo_dungeon(user_items, dungeon_percent=percent)
-    await ctx.send(f"Dungeon {percent}% → EXP with items: {result:.2f}x")
-
-# ======================
-# Booster command (Ascension)
-# ======================
-def calculate_boosters(start_level, end_level, dungeon_percent=50.0):
-    base_boosters_needed = sum(aufstieg_boosters.get(lvl, 0) for lvl in range(start_level, end_level))
-    
-    # Base EXP with dungeon
-    base_exp_percent = 5.0  # 500% EXP base
-    dungeon_multiplier = 1 + dungeon_percent / 100  # e.g., 50% → 1.5
-    total_exp_per_booster = base_exp_percent * dungeon_multiplier * 4  # 4x per EXP Booster
-    
-    boosters_needed = base_boosters_needed / total_exp_per_booster
-    return boosters_needed
-
+# Booster command for Ascension
 @bot.command()
 async def booster(ctx, *args):
-    """
-    Usage:
-    !booster 1 7           → default dungeon 50%
-    !booster dunge 180 1 7 → dungeon 180%
-    """
-    args = [str(a) for a in args]
-    if args[0].lower() == "dunge" and len(args) == 4:
+    dungeon_percent = 50  # default
+    if args[0].lower() == "dunge":
         dungeon_percent = float(args[1])
         start_level = int(args[2])
         end_level = int(args[3])
-    elif len(args) == 2:
-        dungeon_percent = 50.0
+    else:
         start_level = int(args[0])
         end_level = int(args[1])
-    else:
-        await ctx.send("Usage: !booster [start_level end_level] or !booster dunge [percent start_level end_level]")
-        return
 
-    boosters_needed = calculate_boosters(start_level, end_level, dungeon_percent=dungeon_percent)
+    total_seeds = sum(aufstieg_boosters.get(lvl,0) for lvl in range(start_level, end_level))
+    # Base gain: 500% + dungeon %
+    base_percent = 5  # 500% cap
+    total_multiplier = base_percent * (1 + dungeon_percent/100) * 4  # x4 for boosters
+    boosters_needed = total_seeds / total_multiplier
     await ctx.send(f"EXP Boosters needed from Ascension {start_level} → {end_level} with dungeon {dungeon_percent}%: {boosters_needed:.2f} Boosters")
 
-# ======================
-# Bot ready
-# ======================
+# Ready event
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
 
-# ======================
 # Run bot
-# ======================
 TOKEN = os.environ.get("DISCORD_TOKEN")
 bot.run(TOKEN)
