@@ -2,6 +2,7 @@
 import discord
 from discord.ext import commands
 import itertools
+import os
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -37,8 +38,11 @@ items = {
     "stripes": 1.5,
 }
 
+MAX_CAP = 5.0  # 500% cap
+MIN_TARGET = 5.0  # minimum recommended total multiplier
+
 # ================================
-# ASCENSION DATA (base "Samen" per level)
+# ASCENSION DATA
 # ================================
 ascension_exp = {
     1: 3985,
@@ -50,92 +54,70 @@ ascension_exp = {
 }
 
 # ================================
-# COMBO FUNCTION
-# ================================
-def calculate_combos():
-    max_cap = 5.0  # 500%
-    combos_output = []
-    all_items = list(items.keys())
-
-    # Legendary Iris stands alone
-    combos_output.append({
-        "combo": ["legendary iris"],
-        "total": items["legendary iris"],
-        "recommendation": "Use EXP Booster + Random Booster"
-    })
-
-    # For all other combinations (2–4 items to reach 500%)
-    for r in range(1, 4):
-        for combo in itertools.combinations(all_items, r):
-            if "legendary iris" in combo:
-                continue  # skip combos with legendary iris
-            total = 1.0
-            for item in combo:
-                total *= items[item]
-            if total < max_cap:
-                # Only consider combos that reach near 500%
-                if total >= 4.0:  # 400%+
-                    combos_output.append({
-                        "combo": list(combo),
-                        "total": total,
-                        "recommendation": "Use Epic 500% EXP Spell + EXP Booster + Random Booster"
-                    })
-            elif total >= max_cap:
-                total = max_cap
-                combos_output.append({
-                    "combo": list(combo),
-                    "total": total,
-                    "recommendation": "Use EXP Booster + Random Booster"
-                })
-    return combos_output
-
-# ================================
 # COMMAND: !combo
 # ================================
 @bot.command()
 async def combo(ctx):
-    combos = calculate_combos()
-    msg_lines = []
-    for c in combos:
-        line = f"Combo: {', '.join(c['combo'])}\nTotal without cap: {c['total']:.2f}x | Capped at 500%: {min(c['total'],5.0):.2f}x\nRecommendation: {c['recommendation']}"
-        msg_lines.append(line)
-    # Split long messages if needed
-    for i in range(0, len(msg_lines), 5):
-        await ctx.send("\n\n".join(msg_lines[i:i+5]))
+    output = []
+
+    # Legendary Iris always alone
+    output.append(
+        f"Combo: legendary iris\nTotal: 5.00x\nRecommendation: Use EXP Booster + Random Booster"
+    )
+
+    # Generate other combos (2–3 items) for reaching near 500%
+    other_items = [i for i in items.keys() if i != "legendary iris"]
+    for r in range(1, 4):
+        for combo in itertools.combinations(other_items, r):
+            total = 1.0
+            for item in combo:
+                total *= items[item]
+
+            if total >= 4.0 and total <= MAX_CAP:
+                # close to 500% cap
+                rec = "Use Epic 500% EXP Spell + EXP Booster + Random Booster"
+                output.append(
+                    f"Combo: {', '.join(combo)}\nTotal: {min(total, MAX_CAP):.2f}x\nRecommendation: {rec}"
+                )
+
+    # Send messages in chunks to avoid Discord limit
+    for i in range(0, len(output), 5):
+        await ctx.send("\n\n".join(output[i:i+5]))
 
 # ================================
-# COMMAND: !booster [dungeon%] [start] [end]
+# COMMAND: !booster
+# Usage: !booster 1 7 OR !booster dunge 180 1 7
 # ================================
 @bot.command()
 async def booster(ctx, *args):
-    # parse args
-    dungeon_percent = 50.0
-    start = 1
-    end = 7
+    try:
+        dungeon_percent = 50.0
+        start, end = 1, 7
 
-    if args[0] == "dunge":
-        dungeon_percent = float(args[1])
-        start = int(args[2])
-        end = int(args[3])
-    else:
-        start = int(args[0])
-        end = int(args[1])
+        if args[0] == "dunge":
+            dungeon_percent = float(args[1])
+            start = int(args[2])
+            end = int(args[3])
+        else:
+            start = int(args[0])
+            end = int(args[1])
 
-    # Base dungeon bonus 50% as multiplier
-    base_multiplier = 5.0 * (1 + dungeon_percent / 100)  # Legendary Iris base 500% x dungeon%
-    boosters_needed = 0.0
+        # Base: Legendary Iris 500% + dungeon multiplier
+        base_multiplier = 5.0 * (1 + dungeon_percent / 100)
+        boosters_needed = 0.0
 
-    for lvl in range(start, end):
-        base_exp = ascension_exp.get(lvl, 0)
-        # Each EXP Booster x4
-        total_per_booster = base_multiplier * 4  # multiplier applied
-        boosters_needed += base_exp / total_per_booster
+        for lvl in range(start, end):
+            exp_needed = ascension_exp.get(lvl, 0)
+            boosters_needed += exp_needed / (base_multiplier * 4)  # each EXP Booster x4
 
-    await ctx.send(f"EXP Boosters needed from Ascension {start} → {end} with dungeon {dungeon_percent}%: {boosters_needed:.2f} Boosters")
+        await ctx.send(
+            f"EXP Boosters needed from Ascension {start} → {end} with dungeon {dungeon_percent}%: {boosters_needed:.2f} Boosters"
+        )
+    except Exception as e:
+        await ctx.send(f"Error: {e}")
 
 # ================================
 # RUN BOT
 # ================================
-# Place your token here or load from environment variable
-TOKEN = "YOUR_DISCORD_BOT_TOKEN"
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")  # load token from env for safety
 bot.run(TOKEN)
