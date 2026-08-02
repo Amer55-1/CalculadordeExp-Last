@@ -17,10 +17,20 @@ bot = commands.Bot(
 
 
 # ============================================================
+# CONFIGURACIÓN GENERAL
+# ============================================================
+
+# Cantidad de mobs que mata por hora por defecto
+DEFAULT_MOBS_PER_HOUR = 2100
+
+# Sin boosters se necesitan 4 veces los mobs
+# equivalentes al cálculo de boosters
+MOBS_MULTIPLIER = 4
+
+
+# ============================================================
 # BOOSTERS NECESARIOS CON DUNGEON 50%
 # ============================================================
-#
-# Estos son los valores BASE.
 #
 # Dungeon 50%:
 #
@@ -55,12 +65,7 @@ def calculate_boosters(base_boosters, dungeon_percent):
     # Multiplicador del nuevo Dungeon
     new_dungeon_multiplier = 1 + (dungeon_percent / 100)
 
-    # Fórmula:
-    #
-    # Boosters nuevos =
-    # Boosters base × multiplicador Dungeon 50%
-    # / multiplicador Dungeon nuevo
-    #
+    # Fórmula
     result = (
         base_boosters
         * base_dungeon_multiplier
@@ -71,46 +76,82 @@ def calculate_boosters(base_boosters, dungeon_percent):
 
 
 # ============================================================
+# FORMATEAR TIEMPO
+# ============================================================
+
+def format_hours(hours):
+
+    total_minutes = round(hours * 60)
+
+    days = total_minutes // (24 * 60)
+
+    remaining_minutes = total_minutes % (24 * 60)
+
+    final_hours = remaining_minutes // 60
+
+    minutes = remaining_minutes % 60
+
+    if days > 0:
+
+        return (
+            f"{days} días, "
+            f"{final_hours} horas y "
+            f"{minutes} minutos"
+        )
+
+    elif final_hours > 0:
+
+        return (
+            f"{final_hours} horas y "
+            f"{minutes} minutos"
+        )
+
+    else:
+
+        return f"{minutes} minutos"
+
+
+# ============================================================
 # COMANDO DUNGEON
 # ============================================================
 #
-# USO:
-#
 # !dungeon 130
 #
-# Muestra todas las ascensiones con Dungeon 130%
-#
-# ------------------------------------------------------------
+# Muestra todas las ascensiones.
 #
 # !dungeon 130 5
 #
-# Muestra solamente 5 → 6
-#
-# ------------------------------------------------------------
+# Muestra 5 → 6.
 #
 # !dungeon 130 5 6
 #
-# También muestra solamente 5 → 6
+# Muestra 5 → 6.
 #
 # ============================================================
 
 @bot.command(name="dungeon")
-async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_level: int = None):
+async def dungeon(
+    ctx,
+    dungeon_percent: float,
+    start_level: int = None,
+    end_level: int = None
+):
 
     # ========================================================
     # VALIDAR DUNGEON
     # ========================================================
 
     if dungeon_percent < 0:
+
         await ctx.send(
             "❌ El porcentaje de Dungeon no puede ser negativo."
         )
+
         return
 
 
     # ========================================================
-    # SI NO SE INDICA ASCENSIÓN
-    # MOSTRAR TODAS
+    # MOSTRAR TODAS LAS ASCENSIONES
     # ========================================================
 
     if start_level is None:
@@ -130,12 +171,13 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
 
             response += (
                 f"🔹 Ascension **{level} → {level + 1}**\n"
-                f"   Dungeon 50%: **{base_value:,}**\n"
-                f"   Dungeon {dungeon_percent:.0f}%: "
+                f"📦 Dungeon 50%: **{base_value:,} Boosters**\n"
+                f"🔥 Dungeon {dungeon_percent:.0f}%: "
                 f"**{result:,.2f} Boosters**\n\n"
             )
 
         await ctx.send(response)
+
         return
 
 
@@ -143,7 +185,7 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
     # SI SOLO SE INDICA START_LEVEL
     # ========================================================
 
-    if start_level is not None and end_level is None:
+    if end_level is None:
 
         end_level = start_level + 1
 
@@ -159,11 +201,12 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
             "Ejemplo:\n"
             "`!dungeon 130 5 6`"
         )
+
         return
 
 
     # ========================================================
-    # VALIDAR QUE EXISTAN LOS NIVELES
+    # VALIDAR NIVELES
     # ========================================================
 
     missing_levels = []
@@ -189,7 +232,7 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
 
 
     # ========================================================
-    # CALCULAR ASCENSIONES
+    # CALCULAR
     # ========================================================
 
     response = (
@@ -197,7 +240,6 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
     )
 
     total_base = 0
-    total_result = 0
 
     for level in range(start_level, end_level):
 
@@ -209,7 +251,6 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
         )
 
         total_base += base_value
-        total_result += result
 
         response += (
             f"🔹 Ascension **{level} → {level + 1}**\n"
@@ -220,8 +261,7 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
 
 
     # ========================================================
-    # SI HAY MÁS DE UNA ASCENSIÓN
-    # MOSTRAR TOTAL
+    # TOTAL
     # ========================================================
 
     if end_level - start_level > 1:
@@ -244,26 +284,261 @@ async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_leve
 
 
 # ============================================================
+# COMANDO MOOOBS
+# ============================================================
+#
+# Calcula cuántos mobs necesita matar SIN BOOSTERS.
+#
+# USO:
+#
+# !moobs 50 4 5
+#
+# Dungeon 50%
+# Ascension 4 → 5
+# 2100 mobs por hora
+#
+# ------------------------------------------------------------
+#
+# !moobs 50 5 6 1900
+#
+# Dungeon 50%
+# Ascension 5 → 6
+# 1900 mobs por hora
+#
+# ============================================================
+
+@bot.command(name="moobs")
+async def moobs(
+    ctx,
+    dungeon_percent: float,
+    start_level: int,
+    end_level: int,
+    mobs_per_hour: int = DEFAULT_MOBS_PER_HOUR
+):
+
+    # ========================================================
+    # VALIDACIONES
+    # ========================================================
+
+    if dungeon_percent < 0:
+
+        await ctx.send(
+            "❌ El porcentaje de Dungeon no puede ser negativo."
+        )
+
+        return
+
+
+    if start_level >= end_level:
+
+        await ctx.send(
+            "❌ El nivel inicial debe ser menor que el nivel final.\n\n"
+            "Ejemplo:\n"
+            "`!moobs 50 4 5`"
+        )
+
+        return
+
+
+    if mobs_per_hour <= 0:
+
+        await ctx.send(
+            "❌ Los mobs por hora deben ser mayores que 0."
+        )
+
+        return
+
+
+    # ========================================================
+    # VALIDAR ASCENSIONES
+    # ========================================================
+
+    missing_levels = []
+
+    for level in range(start_level, end_level):
+
+        if level not in boosters_50:
+
+            missing_levels.append(level)
+
+
+    if missing_levels:
+
+        await ctx.send(
+            "❌ No tengo datos para las siguientes ascensiones: "
+            + ", ".join(
+                f"{x} → {x + 1}"
+                for x in missing_levels
+            )
+        )
+
+        return
+
+
+    # ========================================================
+    # CALCULAR
+    # ========================================================
+
+    total_boosters = calculate_boosters(
+        sum(
+            boosters_50[level]
+            for level in range(start_level, end_level)
+        ),
+        dungeon_percent
+    )
+
+
+    # Sin boosters se necesitan 4 veces los mobs
+    total_mobs = total_boosters * MOBS_MULTIPLIER
+
+
+    # Horas necesarias
+    total_hours = total_mobs / mobs_per_hour
+
+
+    # ========================================================
+    # RESPUESTA
+    # ========================================================
+
+    response = (
+        f"🐉 **Cálculo de Mobs — Dungeon {dungeon_percent:.0f}%**\n\n"
+        f"🔹 Ascension: **{start_level} → {end_level}**\n"
+        f"⚔️ Mobs necesarios: **{total_mobs:,.0f}**\n"
+        f"📈 Mobs por hora: **{mobs_per_hour:,}**\n"
+        f"⏱️ Horas necesarias: **{total_hours:,.2f} horas**\n"
+        f"🕐 Tiempo aproximado: **{format_hours(total_hours)}**\n\n"
+        f"📌 Cálculo basado en que sin boosters "
+        f"se necesitan **4×** los mobs equivalentes al cálculo de boosters."
+    )
+
+
+    await ctx.send(response)
+
+
+# ============================================================
 # COMANDO BOOSTER
 # ============================================================
 #
-# Este comando está desactivado.
-# Si alguien intenta usarlo, se le indica el comando correcto.
+# Calcula boosters + tiempo estimado.
+#
+# !booster 130 5 6
+#
+# Usa 2100 mobs por hora.
+#
+# ------------------------------------------------------------
+#
+# !booster 130 5 6 1900
+#
+# Usa 1900 mobs por hora.
 #
 # ============================================================
 
 @bot.command(name="booster")
-async def booster_disabled(ctx, *args):
+async def booster(
+    ctx,
+    dungeon_percent: float,
+    start_level: int,
+    end_level: int,
+    mobs_per_hour: int = DEFAULT_MOBS_PER_HOUR
+):
 
-    await ctx.send(
-        "❌ El comando `!booster` ya no se utiliza.\n\n"
-        "Usa el comando:\n"
-        "`!dungeon <Dungeon%>`\n\n"
-        "Ejemplo:\n"
-        "`!dungeon 130`\n\n"
-        "Para una ascensión específica:\n"
-        "`!dungeon 130 5 6`"
+    # ========================================================
+    # VALIDACIONES
+    # ========================================================
+
+    if dungeon_percent < 0:
+
+        await ctx.send(
+            "❌ El porcentaje de Dungeon no puede ser negativo."
+        )
+
+        return
+
+
+    if start_level >= end_level:
+
+        await ctx.send(
+            "❌ El nivel inicial debe ser menor que el nivel final.\n\n"
+            "Ejemplo:\n"
+            "`!booster 130 5 6`"
+        )
+
+        return
+
+
+    if mobs_per_hour <= 0:
+
+        await ctx.send(
+            "❌ Los mobs por hora deben ser mayores que 0."
+        )
+
+        return
+
+
+    # ========================================================
+    # VALIDAR ASCENSIONES
+    # ========================================================
+
+    missing_levels = []
+
+    for level in range(start_level, end_level):
+
+        if level not in boosters_50:
+
+            missing_levels.append(level)
+
+
+    if missing_levels:
+
+        await ctx.send(
+            "❌ No tengo datos para las siguientes ascensiones: "
+            + ", ".join(
+                f"{x} → {x + 1}"
+                for x in missing_levels
+            )
+        )
+
+        return
+
+
+    # ========================================================
+    # CALCULAR BOOSTERS
+    # ========================================================
+
+    total_base = sum(
+        boosters_50[level]
+        for level in range(start_level, end_level)
     )
+
+
+    total_boosters = calculate_boosters(
+        total_base,
+        dungeon_percent
+    )
+
+
+    # ========================================================
+    # CALCULAR HORAS
+    # ========================================================
+
+    total_hours = total_boosters / mobs_per_hour
+
+
+    # ========================================================
+    # RESPUESTA
+    # ========================================================
+
+    response = (
+        f"⚡ **Cálculo de Boosters — Dungeon {dungeon_percent:.0f}%**\n\n"
+        f"🔹 Ascension: **{start_level} → {end_level}**\n"
+        f"📦 Boosters necesarios: **{total_boosters:,.2f}**\n"
+        f"📈 Mobs por hora: **{mobs_per_hour:,}**\n"
+        f"⏱️ Horas necesarias: **{total_hours:,.2f} horas**\n"
+        f"🕐 Tiempo aproximado: **{format_hours(total_hours)}**"
+    )
+
+
+    await ctx.send(response)
 
 
 # ============================================================
@@ -275,14 +550,24 @@ async def custom_help(ctx):
 
     await ctx.send(
         "📖 **LastChaos EXP Calculator**\n\n"
-        "🏰 **Calcular todas las ascensiones:**\n"
-        "`!dungeon 130`\n\n"
-        "🏰 **Calcular una ascensión:**\n"
+
+        "🏰 **Calcular Dungeon:**\n"
+        "`!dungeon 130`\n"
         "`!dungeon 130 5 6`\n\n"
-        "🏰 **También puedes usar:**\n"
-        "`!dungeon 130 5`\n\n"
-        "💡 Puedes usar cualquier Dungeon:\n"
-        "`50` · `100` · `130` · `200` · `250`..."
+
+        "🐉 **Calcular mobs sin boosters:**\n"
+        "`!moobs 50 4 5`\n\n"
+
+        "🐉 **Mobs con velocidad personalizada:**\n"
+        "`!moobs 50 5 6 1900`\n\n"
+
+        "⚡ **Calcular boosters + horas:**\n"
+        "`!booster 130 5 6`\n\n"
+
+        "⚡ **Boosters + horas con velocidad personalizada:**\n"
+        "`!booster 130 5 6 1900`\n\n"
+
+        "💡 Mobs por hora por defecto: **2.100**"
     )
 
 
@@ -298,6 +583,8 @@ async def on_ready():
     print("=" * 50)
     print("Sistema de cálculo Dungeon activo.")
     print("Ejemplo: !dungeon 130 5 6")
+    print("Ejemplo: !moobs 50 4 5")
+    print("Ejemplo: !booster 130 5 6")
 
 
 # ============================================================
