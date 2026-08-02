@@ -2,6 +2,10 @@ import discord
 from discord.ext import commands
 import os
 
+# ============================================================
+# CONFIGURACIÓN DEL BOT
+# ============================================================
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -11,92 +15,171 @@ bot = commands.Bot(
     help_command=None
 )
 
-# ----------------------------
-# ITEM MULTIPLIERS
-# ----------------------------
-items = {
-    "legendary iris": 5.0,
-    "platinum iris": 3.0,
-    "blessed iris": 2.0,
-    "experience scroll": 1.5,
-    "blessed bottle": 1.2,
-    "cake": 1.3,
-    "experience elixir": 1.3,
-    "snowman": 2.0,
-    "double exp event": 2.0
+
+# ============================================================
+# EXP POR ASCENSIÓN
+# ============================================================
+
+aufstieg_boosters = {
+    1: 3985,
+    2: 7970,
+    3: 11955,
+    4: 19128,
+    5: 95639,
+    6: 159398
 }
 
 
-# ----------------------------
-# CALCULATE EXP
-# ----------------------------
-def calculate_combo(combo, dungeon=0):
-    total = 1.0
+# ============================================================
+# COMANDO DUNGEON
+# ============================================================
+#
+# USO:
+#
+# !dungeon 50 4 5
+#
+# Dungeon = 50%
+# Desde Ascension 4 hasta Ascension 5
+#
+# También:
+#
+# !dungeon 130 4 5
+#
+# Dungeon = 130%
+# Desde Ascension 4 hasta Ascension 5
+#
+# ============================================================
 
-    for item in combo:
-        total *= items.get(item.lower(), 1)
+@bot.command(name="dungeon")
+async def dungeon(ctx, dungeon_percent: float, start_level: int, end_level: int):
 
-    # Cap máximo recomendado: 500% - 600%
-    capped_total = min(max(total, 5), 6)
+    # Comprobar que el nivel inicial sea menor
+    if start_level >= end_level:
+        await ctx.send(
+            "❌ El nivel inicial debe ser menor que el nivel final.\n"
+            "Ejemplo: `!dungeon 130 4 5`"
+        )
+        return
 
-    # Multiplicador x4 de los boosters
-    booster_total = capped_total * 4
+    # Comprobar que existan los niveles
+    missing_levels = []
 
-    # Dungeon
-    dungeon_multiplier = 1 + (dungeon / 100)
+    for lvl in range(start_level, end_level):
+        if lvl not in aufstieg_boosters:
+            missing_levels.append(lvl)
 
-    return {
-        "base": total,
-        "capped": capped_total,
-        "with_booster": booster_total,
-        "with_dungeon": capped_total * dungeon_multiplier,
-        "with_booster_and_dungeon": booster_total * dungeon_multiplier
-    }
+    if missing_levels:
+        await ctx.send(
+            f"❌ No tengo datos de EXP para Ascension: "
+            f"{', '.join(map(str, missing_levels))}"
+        )
+        return
 
+    # ========================================================
+    # CALCULAR EXP TOTAL
+    # ========================================================
 
-# ----------------------------
-# DUNGEON COMMAND
-# ----------------------------
-@bot.command()
-async def dungeon(ctx, percent: float, *, args=""):
-
-    # Separar los items usando "+"
-    user_items = [
-        x.strip().lower()
-        for x in args.split("+")
-        if x.strip()
-    ]
-
-    # Calcular
-    result = calculate_combo(
-        user_items,
-        dungeon=percent
+    total_exp = sum(
+        aufstieg_boosters[lvl]
+        for lvl in range(start_level, end_level)
     )
 
-    # Respuesta
+    # ========================================================
+    # APLICAR DUNGEON
+    # ========================================================
+
+    dungeon_multiplier = 1 + (dungeon_percent / 100)
+
+    total_exp_with_dungeon = total_exp * dungeon_multiplier
+
+    # ========================================================
+    # CALCULAR BOOSTERS
+    # ========================================================
+
+    # Cada booster representa 500% base × 4
+    exp_per_booster = 5 * 4
+
+    boosters_needed = (
+        total_exp_with_dungeon / exp_per_booster
+    )
+
+    # ========================================================
+    # RESPUESTA
+    # ========================================================
+
     await ctx.send(
-        f"🏰 **Dungeon {percent}%**\n"
-        f"📦 Items: {', '.join(user_items) if user_items else 'Ninguno'}\n\n"
-        f"🔹 EXP base: **{result['base']:.2f}x**\n"
-        f"🔹 EXP cap: **{result['capped']:.2f}x**\n"
-        f"🔹 Con Booster x4: **{result['with_booster']:.2f}x**\n"
-        f"🔹 Con Dungeon: **{result['with_dungeon']:.2f}x**\n"
-        f"🔥 **Booster + Dungeon: {result['with_booster_and_dungeon']:.2f}x**"
+        f"🏰 **Cálculo de Dungeon**\n\n"
+        f"📊 Dungeon: **{dungeon_percent:.0f}%**\n"
+        f"📈 Ascension: **{start_level} → {end_level}**\n\n"
+        f"💠 EXP base necesaria: **{total_exp:,.0f}**\n"
+        f"🔥 EXP con Dungeon: **{total_exp_with_dungeon:,.0f}**\n\n"
+        f"🚀 Boosters necesarios: **{boosters_needed:,.2f}**"
     )
 
 
-# ----------------------------
+# ============================================================
+# BLOQUEAR COMANDO BOOSTER
+# ============================================================
+#
+# Si alguien intenta usar !booster, el bot responderá
+# indicando que el comando correcto es !dungeon.
+#
+# ============================================================
+
+@bot.command(name="booster")
+async def booster_removed(ctx, *args):
+
+    await ctx.send(
+        "❌ El comando `!booster` ya no está disponible.\n\n"
+        "Usa:\n"
+        "`!dungeon <dungeon%> <ascension_inicio> <ascension_final>`\n\n"
+        "Ejemplo:\n"
+        "`!dungeon 130 4 5`"
+    )
+
+
+# ============================================================
+# COMANDO HELP
+# ============================================================
+
+@bot.command(name="help")
+async def custom_help(ctx):
+
+    await ctx.send(
+        "📖 **LastChaos EXP Calculator**\n\n"
+        "**Único comando de cálculo:**\n\n"
+        "`!dungeon <dungeon%> <ascension_inicio> <ascension_final>`\n\n"
+        "**Ejemplo:**\n"
+        "`!dungeon 130 4 5`\n\n"
+        "Esto calcula los Boosters necesarios desde Ascension "
+        "4 hasta Ascension 5 con Dungeon 130%."
+    )
+
+
+# ============================================================
 # ON READY
-# ----------------------------
+# ============================================================
+
 @bot.event
 async def on_ready():
-    print(f"{bot.user} is online!")
-    print("Comando disponible: !dungeon")
+
+    print("=" * 50)
+    print(f"BOT CONECTADO: {bot.user}")
+    print("=" * 50)
+
+    print("Comandos disponibles:")
+    print("!dungeon")
+    print("!help")
+    print("!booster -> redirige a !dungeon")
 
 
-# ----------------------------
-# RUN BOT
-# ----------------------------
+# ============================================================
+# EJECUTAR BOT
+# ============================================================
+
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
-bot.run(TOKEN)
+if not TOKEN:
+    print("ERROR: No se encontró DISCORD_TOKEN")
+else:
+    bot.run(TOKEN)
