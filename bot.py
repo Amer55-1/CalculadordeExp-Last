@@ -17,10 +17,23 @@ bot = commands.Bot(
 
 
 # ============================================================
-# EXP POR ASCENSIÓN
+# BOOSTERS NECESARIOS CON DUNGEON 50%
+# ============================================================
+#
+# Estos son los valores BASE.
+#
+# Dungeon 50%:
+#
+# Ascension 1 → 2 = 3.985
+# Ascension 2 → 3 = 7.970
+# Ascension 3 → 4 = 11.955
+# Ascension 4 → 5 = 19.128
+# Ascension 5 → 6 = 95.639
+# Ascension 6 → 7 = 159.398
+#
 # ============================================================
 
-aufstieg_boosters = {
+boosters_50 = {
     1: 3985,
     2: 7970,
     3: 11955,
@@ -31,115 +44,230 @@ aufstieg_boosters = {
 
 
 # ============================================================
+# CALCULAR BOOSTERS SEGÚN DUNGEON
+# ============================================================
+
+def calculate_boosters(base_boosters, dungeon_percent):
+
+    # Los valores base corresponden a Dungeon 50%
+    base_dungeon_multiplier = 1 + (50 / 100)
+
+    # Multiplicador del nuevo Dungeon
+    new_dungeon_multiplier = 1 + (dungeon_percent / 100)
+
+    # Fórmula:
+    #
+    # Boosters nuevos =
+    # Boosters base × multiplicador Dungeon 50%
+    # / multiplicador Dungeon nuevo
+    #
+    result = (
+        base_boosters
+        * base_dungeon_multiplier
+        / new_dungeon_multiplier
+    )
+
+    return result
+
+
+# ============================================================
 # COMANDO DUNGEON
 # ============================================================
 #
 # USO:
 #
-# !dungeon 50 4 5
+# !dungeon 130
 #
-# Dungeon = 50%
-# Desde Ascension 4 hasta Ascension 5
+# Muestra todas las ascensiones con Dungeon 130%
 #
-# También:
+# ------------------------------------------------------------
 #
-# !dungeon 130 4 5
+# !dungeon 130 5
 #
-# Dungeon = 130%
-# Desde Ascension 4 hasta Ascension 5
+# Muestra solamente 5 → 6
+#
+# ------------------------------------------------------------
+#
+# !dungeon 130 5 6
+#
+# También muestra solamente 5 → 6
 #
 # ============================================================
 
 @bot.command(name="dungeon")
-async def dungeon(ctx, dungeon_percent: float, start_level: int, end_level: int):
+async def dungeon(ctx, dungeon_percent: float, start_level: int = None, end_level: int = None):
 
-    # Comprobar que el nivel inicial sea menor
-    if start_level >= end_level:
+    # ========================================================
+    # VALIDAR DUNGEON
+    # ========================================================
+
+    if dungeon_percent < 0:
         await ctx.send(
-            "❌ El nivel inicial debe ser menor que el nivel final.\n"
-            "Ejemplo: `!dungeon 130 4 5`"
+            "❌ El porcentaje de Dungeon no puede ser negativo."
         )
         return
 
-    # Comprobar que existan los niveles
+
+    # ========================================================
+    # SI NO SE INDICA ASCENSIÓN
+    # MOSTRAR TODAS
+    # ========================================================
+
+    if start_level is None:
+
+        response = (
+            f"🏰 **Cálculo de Dungeon {dungeon_percent:.0f}%**\n\n"
+            f"📌 Valores calculados tomando como referencia "
+            f"**Dungeon 50%**.\n\n"
+        )
+
+        for level, base_value in boosters_50.items():
+
+            result = calculate_boosters(
+                base_value,
+                dungeon_percent
+            )
+
+            response += (
+                f"🔹 Ascension **{level} → {level + 1}**\n"
+                f"   Dungeon 50%: **{base_value:,}**\n"
+                f"   Dungeon {dungeon_percent:.0f}%: "
+                f"**{result:,.2f} Boosters**\n\n"
+            )
+
+        await ctx.send(response)
+        return
+
+
+    # ========================================================
+    # SI SOLO SE INDICA START_LEVEL
+    # ========================================================
+
+    if start_level is not None and end_level is None:
+
+        end_level = start_level + 1
+
+
+    # ========================================================
+    # VALIDAR RANGO
+    # ========================================================
+
+    if start_level >= end_level:
+
+        await ctx.send(
+            "❌ El nivel inicial debe ser menor que el nivel final.\n\n"
+            "Ejemplo:\n"
+            "`!dungeon 130 5 6`"
+        )
+        return
+
+
+    # ========================================================
+    # VALIDAR QUE EXISTAN LOS NIVELES
+    # ========================================================
+
     missing_levels = []
 
-    for lvl in range(start_level, end_level):
-        if lvl not in aufstieg_boosters:
-            missing_levels.append(lvl)
+    for level in range(start_level, end_level):
+
+        if level not in boosters_50:
+
+            missing_levels.append(level)
+
 
     if missing_levels:
+
         await ctx.send(
-            f"❌ No tengo datos de EXP para Ascension: "
-            f"{', '.join(map(str, missing_levels))}"
+            "❌ No tengo datos para las siguientes ascensiones: "
+            + ", ".join(
+                f"{x} → {x + 1}"
+                for x in missing_levels
+            )
         )
+
         return
 
+
     # ========================================================
-    # CALCULAR EXP TOTAL
+    # CALCULAR ASCENSIONES
     # ========================================================
 
-    total_exp = sum(
-        aufstieg_boosters[lvl]
-        for lvl in range(start_level, end_level)
+    response = (
+        f"🏰 **Cálculo de Dungeon {dungeon_percent:.0f}%**\n\n"
     )
 
+    total_base = 0
+    total_result = 0
+
+    for level in range(start_level, end_level):
+
+        base_value = boosters_50[level]
+
+        result = calculate_boosters(
+            base_value,
+            dungeon_percent
+        )
+
+        total_base += base_value
+        total_result += result
+
+        response += (
+            f"🔹 Ascension **{level} → {level + 1}**\n"
+            f"📦 Dungeon 50%: **{base_value:,} Boosters**\n"
+            f"🔥 Dungeon {dungeon_percent:.0f}%: "
+            f"**{result:,.2f} Boosters**\n\n"
+        )
+
+
     # ========================================================
-    # APLICAR DUNGEON
+    # SI HAY MÁS DE UNA ASCENSIÓN
+    # MOSTRAR TOTAL
     # ========================================================
 
-    dungeon_multiplier = 1 + (dungeon_percent / 100)
+    if end_level - start_level > 1:
 
-    total_exp_with_dungeon = total_exp * dungeon_multiplier
+        total_calculated = calculate_boosters(
+            total_base,
+            dungeon_percent
+        )
 
-    # ========================================================
-    # CALCULAR BOOSTERS
-    # ========================================================
+        response += (
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 **TOTAL**\n"
+            f"📦 Dungeon 50%: **{total_base:,} Boosters**\n"
+            f"🔥 Dungeon {dungeon_percent:.0f}%: "
+            f"**{total_calculated:,.2f} Boosters**"
+        )
 
-    # Cada booster representa 500% base × 4
-    exp_per_booster = 5 * 4
 
-    boosters_needed = (
-        total_exp_with_dungeon / exp_per_booster
-    )
-
-    # ========================================================
-    # RESPUESTA
-    # ========================================================
-
-    await ctx.send(
-        f"🏰 **Cálculo de Dungeon**\n\n"
-        f"📊 Dungeon: **{dungeon_percent:.0f}%**\n"
-        f"📈 Ascension: **{start_level} → {end_level}**\n\n"
-        f"💠 EXP base necesaria: **{total_exp:,.0f}**\n"
-        f"🔥 EXP con Dungeon: **{total_exp_with_dungeon:,.0f}**\n\n"
-        f"🚀 Boosters necesarios: **{boosters_needed:,.2f}**"
-    )
+    await ctx.send(response)
 
 
 # ============================================================
-# BLOQUEAR COMANDO BOOSTER
+# COMANDO BOOSTER
 # ============================================================
 #
-# Si alguien intenta usar !booster, el bot responderá
-# indicando que el comando correcto es !dungeon.
+# Este comando está desactivado.
+# Si alguien intenta usarlo, se le indica el comando correcto.
 #
 # ============================================================
 
 @bot.command(name="booster")
-async def booster_removed(ctx, *args):
+async def booster_disabled(ctx, *args):
 
     await ctx.send(
-        "❌ El comando `!booster` ya no está disponible.\n\n"
-        "Usa:\n"
-        "`!dungeon <dungeon%> <ascension_inicio> <ascension_final>`\n\n"
+        "❌ El comando `!booster` ya no se utiliza.\n\n"
+        "Usa el comando:\n"
+        "`!dungeon <Dungeon%>`\n\n"
         "Ejemplo:\n"
-        "`!dungeon 130 4 5`"
+        "`!dungeon 130`\n\n"
+        "Para una ascensión específica:\n"
+        "`!dungeon 130 5 6`"
     )
 
 
 # ============================================================
-# COMANDO HELP
+# HELP
 # ============================================================
 
 @bot.command(name="help")
@@ -147,12 +275,14 @@ async def custom_help(ctx):
 
     await ctx.send(
         "📖 **LastChaos EXP Calculator**\n\n"
-        "**Único comando de cálculo:**\n\n"
-        "`!dungeon <dungeon%> <ascension_inicio> <ascension_final>`\n\n"
-        "**Ejemplo:**\n"
-        "`!dungeon 130 4 5`\n\n"
-        "Esto calcula los Boosters necesarios desde Ascension "
-        "4 hasta Ascension 5 con Dungeon 130%."
+        "🏰 **Calcular todas las ascensiones:**\n"
+        "`!dungeon 130`\n\n"
+        "🏰 **Calcular una ascensión:**\n"
+        "`!dungeon 130 5 6`\n\n"
+        "🏰 **También puedes usar:**\n"
+        "`!dungeon 130 5`\n\n"
+        "💡 Puedes usar cualquier Dungeon:\n"
+        "`50` · `100` · `130` · `200` · `250`..."
     )
 
 
@@ -166,20 +296,20 @@ async def on_ready():
     print("=" * 50)
     print(f"BOT CONECTADO: {bot.user}")
     print("=" * 50)
-
-    print("Comandos disponibles:")
-    print("!dungeon")
-    print("!help")
-    print("!booster -> redirige a !dungeon")
+    print("Sistema de cálculo Dungeon activo.")
+    print("Ejemplo: !dungeon 130 5 6")
 
 
 # ============================================================
-# EJECUTAR BOT
+# INICIAR BOT
 # ============================================================
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 if not TOKEN:
-    print("ERROR: No se encontró DISCORD_TOKEN")
+
+    print("❌ ERROR: No se encontró DISCORD_TOKEN")
+
 else:
+
     bot.run(TOKEN)
